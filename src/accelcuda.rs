@@ -135,18 +135,3 @@ extern "C" {
         bytes: size_t,
     );
 }
-extern "C" {
-    pub fn AccelCUDA_PrepareDeviceCall(
-        gridX: u32,
-        gridY: u32,
-        gridZ: u32,
-        blockX: u32,
-        blockY: u32,
-        blockZ: u32,
-        sharedMem: size_t,
-        stream: AccelCUDA_Stream,
-    );
-}
-extern "C" {
-    pub fn AccelCUDA_DeviceCall(functionName: *const ::std::os::raw::c_char);
-}

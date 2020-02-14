@@ -34,10 +34,3 @@ AL2O3_EXTERN_C void AccelCUDA_FreeHostMemory(AccelCUDA_Cuda* , void* memory);
 AL2O3_EXTERN_C void AccelCUDA_CopyHostToDevice(AccelCUDA_Stream stream, void const* hostMem,  AccelCUDA_DeviceMemory devMemory, size_t bytes);
 AL2O3_EXTERN_C void AccelCUDA_CopyDeviceToHost(AccelCUDA_Stream stream, AccelCUDA_DeviceMemory devMemory, void * hostMem, size_t bytes);
 AL2O3_EXTERN_C void AccelCUDA_CopyDeviceToDevice(AccelCUDA_Stream stream, AccelCUDA_DeviceMemory srcDevMemory,  AccelCUDA_DeviceMemory dstDevMemory, size_t bytes);
-
-AL2O3_EXTERN_C void AccelCUDA_PrepareDeviceCall(uint32_t gridX, uint32_t gridY, uint32_t gridZ,
-																						uint32_t blockX, uint32_t blockY, uint32_t blockZ,
-																						size_t sharedMem,
-																						AccelCUDA_Stream stream
-																						);
-AL2O3_EXTERN_C void AccelCUDA_DeviceCall(char const* functionName);

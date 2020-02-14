@@ -26,7 +26,7 @@ fn main()
     println!("cargo:rustc-link-lib=static=al2o3_memory");
 
     let bindings = bindgen::Builder::default()
-        .header("compute_cuda/src/accelcuda.h")
+        .header("compute_cuda/include/accelcuda.h")
         .clang_arg("-Icompute_cuda/al2o3/al2o3_platform-src/include")
         .whitelist_function("AccelCUDA_.*")
         .generate()

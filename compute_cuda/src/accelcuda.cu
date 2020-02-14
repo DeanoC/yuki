@@ -1,7 +1,7 @@
 // License Summary: MIT see LICENSE file
 #include "al2o3_platform/platform.h"
 #include "al2o3_memory/memory.h"
-#include "accelcuda.h"
+#include "../include/accelcuda.h"
 #include <cuda.h>
 #include <nvrtc.h>
 
