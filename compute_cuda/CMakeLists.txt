@@ -21,3 +21,16 @@ set(Deps
 		al2o3_memory
 		)
 ADD_LIB2(${LibName} "${Src}" "${Deps}")
+
+set(CUDA_GENERATED_OUTPUT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ptxs)
+set(CUDA_VERBOSE_BUILD OFF)
+set(CUDA_NVCC_FLAGS "-gencode arch=compute_61,code=sm_61")
+find_package(CUDA REQUIRED)
+cuda_compile_ptx(
+		cuda_ptx_files
+		kernels/test.cu
+)
+
+add_custom_target(ptx ALL
+		DEPENDS ${cuda_ptx_files} kernels/test.cu
+		SOURCES kernels/test.cu)

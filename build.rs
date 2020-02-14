@@ -1,4 +1,6 @@
 use cuda_config::*;
+use std::env;
+use std::path::Path;
 
 fn main()
 {
@@ -18,12 +20,14 @@ fn main()
     println!("cargo:rustc-link-lib=dylib=nvrtc");
     println!("cargo:rerun-if-env-changed=CUDA_LIBRARY_PATH");
 
-    println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=compute_cuda/out_libs/*");
     println!("cargo:rustc-link-search=native=compute_cuda/out_libs");
     println!("cargo:rustc-link-lib=static=compute_cuda");
     println!("cargo:rustc-link-lib=static=al2o3_platform");
     println!("cargo:rustc-link-lib=static=al2o3_memory");
+
+    let out_dir = env::var_os("OUT_DIR").unwrap();
+    let dest_path = Path::new(&out_dir).join("accelcuda.rs");
 
     let bindings = bindgen::Builder::default()
         .header("compute_cuda/include/accelcuda.h")
@@ -31,6 +35,6 @@ fn main()
         .whitelist_function("AccelCUDA_.*")
         .generate()
         .expect("Unable to generate bindings");
-    bindings.write_to_file("src/accelcuda.rs").expect("Unable to write bindings");
+    bindings.write_to_file(dest_path).expect("Unable to write bindings");
 
 }
