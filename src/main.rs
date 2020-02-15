@@ -1,3 +1,4 @@
+#![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 include!(concat!(env!("OUT_DIR"), "/accelcuda.rs"));
@@ -7,8 +8,6 @@ use std::slice;
 
 fn main() {
     let cuda = unsafe { AccelCUDA_Create() };
-
-    println!("Hello, world!");
 
     let mem1D = unsafe { AccelCUDA_DeviceMalloc(cuda, 1024 * 1024) };
     let mem2D = unsafe { AccelCUDA_DeviceMalloc2D(cuda, 1024, 1024) };

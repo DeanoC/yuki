@@ -5,6 +5,29 @@
 #include <cuda.h>
 #include <nvrtc.h>
 
+
+struct _AccelCUDA_Cuda {
+	int deviceIndex;
+	CUdevice device;
+	
+	CUcontext context;
+};
+
+struct _AccelCUDA_Function {
+	CUfunction function;
+
+	size_t sharedMemBytes; 
+	uint64_t blockDimX;
+	uint64_t blockDimY;
+	uint64_t blockDimZ;
+
+	CUfunc_cache cacheConfig;
+};
+
+static_assert(sizeof(uintptr_t) == sizeof(CUstream), "sizeof CUstream error");
+static_assert(sizeof(uintptr_t) == sizeof(CUdeviceptr), "sizeof CUdeviceptr error");
+static_assert(sizeof(uintptr_t) == sizeof(CUmodule), "sizeof CUModule error");
+
 inline int _ConvertSMVer2Cores(int major, int minor) {
 	// Defines for GPU Architecture types (using the SM version to determine
 	// the # of cores per SM
@@ -122,15 +145,9 @@ void errCheck(nvrtcResult result, char const *const func, const char *const file
 #define checkCudaErrors(val) checkCUDA((val), #val, __FILE__, __LINE__)
 #define checkErrors(val) errCheck((val), #val, __FILE__, __LINE__)
 
-struct AccelCUDA_Cuda {
-	int deviceIndex;
-	CUdevice device;
-	CUcontext context;
 
-	cudaStream_t currentStream; // defaults to 0 the default stream
-};
+AL2O3_EXTERN_C AccelCUDA_Cuda AccelCUDA_Create() {
 
-AL2O3_EXTERN_C AccelCUDA_Cuda *AccelCUDA_Create() {
 	cuInit(0);
 
 	int deviceCount;
@@ -182,7 +199,7 @@ AL2O3_EXTERN_C AccelCUDA_Cuda *AccelCUDA_Create() {
 		return nullptr;
 	}
 
-	AccelCUDA_Cuda* cuda = (AccelCUDA_Cuda*)MEMORY_CALLOC(1, sizeof(AccelCUDA_Cuda));
+	_AccelCUDA_Cuda* cuda = (_AccelCUDA_Cuda*)MEMORY_CALLOC(1, sizeof(_AccelCUDA_Cuda));
 	if(!cuda) return nullptr;
 
 	cuda->deviceIndex = pickedDeviceIndex;
@@ -193,7 +210,7 @@ AL2O3_EXTERN_C AccelCUDA_Cuda *AccelCUDA_Create() {
 	return cuda;
 }
 
-AL2O3_EXTERN_C void AccelCUDA_Destroy(AccelCUDA_Cuda *cuda) {
+AL2O3_EXTERN_C void AccelCUDA_Destroy(AccelCUDA_Cuda cuda) {
 	if(!cuda) return;
 
 	checkErrors(cuCtxSynchronize());
@@ -202,14 +219,30 @@ AL2O3_EXTERN_C void AccelCUDA_Destroy(AccelCUDA_Cuda *cuda) {
 	MEMORY_FREE(cuda);
 }
 
-AL2O3_EXTERN_C AccelCUDA_Stream AccelCUDA_StreamCreate(AccelCUDA_Cuda* cuda) {
+AL2O3_EXTERN_C AccelCUDA_Stream AccelCUDA_StreamCreate(AccelCUDA_Cuda cuda) {
 	CUstream stream;
 	checkErrors(cuStreamCreate(&stream, CU_STREAM_DEFAULT));
 	return (AccelCUDA_Stream)stream;
 }
 
-AL2O3_EXTERN_C void AccelCUDA_StreamDestroy(AccelCUDA_Cuda* cuda, AccelCUDA_Stream stream) {
+AL2O3_EXTERN_C void AccelCUDA_StreamDestroy(AccelCUDA_Cuda cuda, AccelCUDA_Stream stream) {
 	checkErrors(cuStreamDestroy((CUstream)stream));
+}
+
+AL2O3_EXTERN_C AccelCUDA_Function AccelCUDA_FunctionCreate(AccelCUDA_Cuda cuda, AccelCUDA_Module module, char const *name) {
+	_AccelCUDA_Function* func = (_AccelCUDA_Function*)MEMORY_CALLOC(1, sizeof(_AccelCUDA_Function));
+	if(!func) return (AccelCUDA_Function)nullptr;
+
+	CUfunction function;
+	checkErrors(cuModuleGetFunction(&function, (CUmodule)module, name));
+	func->function = function;
+	AccelCUDA_FunctionSetCacheConfig(func, ACCC_PREFER_L1);
+
+	return func;
+}
+
+AL2O3_EXTERN_C void AccelCUDA_FunctionDestroy(AccelCUDA_Cuda cuda, AccelCUDA_Function func) {
+	MEMORY_FREE(func);
 }
 
 AL2O3_EXTERN_C bool AccelCUDA_StreamIsIdle(AccelCUDA_Stream stream) {
@@ -220,32 +253,60 @@ AL2O3_EXTERN_C void AccelCUDA_StreamSynchronize(AccelCUDA_Stream stream) {
 	checkErrors(cuStreamSynchronize((CUstream)stream));
 }
 
-AL2O3_EXTERN_C AccelCUDA_DeviceMemory AccelCUDA_DeviceMalloc(AccelCUDA_Cuda*, uint64_t size) {
+AL2O3_EXTERN_C AccelCUDA_Module AccelCUDA_ModuleCreateFromPTX(AccelCUDA_Cuda cuda, char const *ptx) {
+	CUmodule module;
+	checkErrors( cuModuleLoadData(&module, ptx));
+
+	return (AccelCUDA_Module)module;
+}
+
+AL2O3_EXTERN_C void AccelCUDA_ModuleDestroy(AccelCUDA_Module module) {
+	checkErrors(cuModuleUnload((CUmodule)module));
+}
+
+AL2O3_EXTERN_C AccelCUDA_DeviceMemory AccelCUDA_ModuleGetGlobal(AccelCUDA_Module module, char const *name) {
+	CUdeviceptr memory;
+	size_t size;
+	checkErrors(cuModuleGetGlobal(&memory, &size, (CUmodule)module, name));
+	return (AccelCUDA_DeviceMemory)memory;
+}
+
+AL2O3_EXTERN_C size_t AccelCUDA_ModuleGetGlobalSize(AccelCUDA_Module module, char const *name) {
+	CUdeviceptr memory;
+	size_t size;
+	checkErrors(cuModuleGetGlobal(&memory, &size, (CUmodule)module, name));
+	return size;
+}
+
+AL2O3_EXTERN_C AccelCUDA_DeviceMemory AccelCUDA_DeviceMalloc(AccelCUDA_Cuda cuda, uint64_t size) {
 	CUdeviceptr dptr;
 	checkErrors(cuMemAlloc(&dptr, size));
-	return (AccelCUDA_DeviceMemoryPtr*)dptr;
+	return (AccelCUDA_DeviceMemory)dptr;
 }
-AL2O3_EXTERN_C AccelCUDA_DevicePitchedMemory AccelCUDA_DeviceMalloc2D(AccelCUDA_Cuda*, uint64_t width, uint64_t height) {
-	AccelCUDA_DevicePitchedMemoryPtr * dptr = (AccelCUDA_DevicePitchedMemoryPtr *) MEMORY_CALLOC(1, sizeof(AccelCUDA_DevicePitchedMemoryPtr));
+
+AL2O3_EXTERN_C AccelCUDA_DevicePitchedMemory AccelCUDA_DeviceMalloc2D(AccelCUDA_Cuda cuda, uint64_t width, uint64_t height) {
+	_AccelCUDA_DevicePitchedMemory * dptr = (_AccelCUDA_DevicePitchedMemory *) MEMORY_CALLOC(1, sizeof(_AccelCUDA_DevicePitchedMemory));
 	checkErrors(cuMemAllocPitch((CUdeviceptr*)&dptr->ptr, &dptr->pitch, width, height, 4));
 	return dptr;
 }
 
-AL2O3_EXTERN_C void AccelCUDA_FreeDeviceMemory(AccelCUDA_Cuda*, AccelCUDA_DeviceMemory memory) {
+AL2O3_EXTERN_C void AccelCUDA_FreeDeviceMemory(AccelCUDA_Cuda cuda, AccelCUDA_DeviceMemory memory) {
 	checkErrors(cuMemFree((CUdeviceptr)memory));
 }
 
-AL2O3_EXTERN_C void AccelCUDA_FreeDeviceMemory2D(AccelCUDA_Cuda*, AccelCUDA_DevicePitchedMemory memory) {
+
+AL2O3_EXTERN_C void AccelCUDA_FreeDeviceMemory2D(AccelCUDA_Cuda cuda, AccelCUDA_DevicePitchedMemory memory) {
 	checkErrors(cuMemFree((CUdeviceptr)memory->ptr));
-	MEMORY_FREE(memory);
+	MEMORY_FREE((void*)memory);
 }
 
-AL2O3_EXTERN_C void* AccelCUDA_HostMalloc(AccelCUDA_Cuda* cuda, uint64_t size) {
+AL2O3_EXTERN_C void* AccelCUDA_HostMalloc(AccelCUDA_Cuda cuda, uint64_t size) {
 	void* dptr = nullptr;
 	checkErrors(cuMemAllocHost(&dptr, size));
 	return dptr;
 }
-AL2O3_EXTERN_C void AccelCUDA_FreeHostMemory(AccelCUDA_Cuda* , void* memory) {
+
+AL2O3_EXTERN_C void AccelCUDA_FreeHostMemory(AccelCUDA_Cuda cuda, void* memory) {
 	checkErrors(cuMemFreeHost(memory));
 }
 
@@ -259,4 +320,84 @@ AL2O3_EXTERN_C void AccelCUDA_CopyDeviceToHost(AccelCUDA_Stream stream, AccelCUD
 
 AL2O3_EXTERN_C void AccelCUDA_CopyDeviceToDevice(AccelCUDA_Stream stream, AccelCUDA_DeviceMemory srcDevMemory, AccelCUDA_DeviceMemory dstDevMemory, size_t bytes) {
 	checkErrors(cuMemcpyDtoDAsync((CUdeviceptr)dstDevMemory, (CUdeviceptr)srcDevMemory, bytes, (cudaStream_t)stream));
+}
+
+AL2O3_EXTERN_C int AccelCUDA_FunctionGetAttribute(AccelCUDA_Function function, AccelCUDA_FunctionAttribute attribute) {
+	int value;
+	checkErrors(cuFuncGetAttribute(&value, (CUfunction_attribute)attribute, (CUfunction)function));
+	return value;
+}
+
+AL2O3_EXTERN_C void AccelCUDA_FunctionSetMaxDynamicSharedBytes(AccelCUDA_Function function, int size) {
+	checkErrors(cuFuncSetAttribute((CUfunction)function, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, size));
+}
+
+AL2O3_EXTERN_C void AccelCUDA_FunctionSetPreferredSharedMemoryCarveOutHint(AccelCUDA_Function function, int size) {
+	checkErrors(cuFuncSetAttribute((CUfunction)function, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT, size));
+}
+
+AL2O3_EXTERN_C AccelCUDA_CacheConfig AccelCUDA_FunctionGetCacheConfig(AccelCUDA_Function function) {
+	switch(function->cacheConfig) {
+		case CU_FUNC_CACHE_PREFER_SHARED:
+			return ACCC_PREFER_SHARED;
+		case CU_FUNC_CACHE_PREFER_L1:
+			return ACCC_PREFER_L1;
+		case CU_FUNC_CACHE_PREFER_EQUAL:
+			return ACCC_PREFER_EQUAL;
+		case CU_FUNC_CACHE_PREFER_NONE:
+		default:
+			return ACCC_PREFER_L1;
+	}
+}
+
+AL2O3_EXTERN_C void AccelCUDA_FunctionSetCacheConfig(AccelCUDA_Function function, AccelCUDA_CacheConfig config) {
+	switch(config) {
+		case ACCC_PREFER_SHARED: function->cacheConfig = CU_FUNC_CACHE_PREFER_SHARED; break;
+		case ACCC_PREFER_L1: function->cacheConfig = CU_FUNC_CACHE_PREFER_L1; break;
+		case ACCC_PREFER_EQUAL: function->cacheConfig = CU_FUNC_CACHE_PREFER_EQUAL; break;
+		default: LOGERROR("Invalid Cache Config"); return;
+	}
+
+	checkErrors(cuFuncSetCacheConfig((CUfunction) function, function->cacheConfig));
+}
+
+AL2O3_EXTERN_C void AccelCUDA_FunctionSetDynamicSharedMemorySize(AccelCUDA_Function function, size_t size) {
+	function->sharedMemBytes = size;
+}
+
+AL2O3_EXTERN_C void AccelCUDA_FunctionSetBlockDims(AccelCUDA_Function function, uint64_t x, uint64_t y, uint64_t z) {
+	function->blockDimX = x;
+	function->blockDimX = y;
+	function->blockDimX = z;
+}
+
+AL2O3_EXTERN_C void AccelCUDA_StreamLaunchCoopFunction(AccelCUDA_Stream stream, AccelCUDA_Function function, 
+																												uint64_t gridDimX, uint64_t gridDimY, uint64_t gridDimZ) {
+	ASSERT(function->blockDimX != 0);
+	ASSERT(function->blockDimY != 0);
+	ASSERT(function->blockDimZ != 0);
+
+	checkErrors(cuLaunchCooperativeKernel((CUfunction)function->function, 
+		(unsigned int)gridDimX, (unsigned int)gridDimY, (unsigned int)gridDimZ,
+		(unsigned int)function->blockDimX, (unsigned int)function->blockDimY, (unsigned int)function->blockDimZ, 
+		(unsigned int)function->sharedMemBytes,
+		(CUstream)stream,	nullptr));
+
+}
+AL2O3_EXTERN_C void AccelCUDA_StreamHostCallback(AccelCUDA_Stream stream, AccelCUDA_HostCallback callback, void* userData) {
+	checkErrors(cuLaunchHostFunc((CUstream)stream, callback, userData)); 
+}
+
+AL2O3_EXTERN_C void AccelCUDA_StreamLaunchFunction(AccelCUDA_Stream stream, AccelCUDA_Function function, 
+																												uint64_t gridDimX, uint64_t gridDimY, uint64_t gridDimZ) {
+	ASSERT(function->blockDimX != 0);
+	ASSERT(function->blockDimY != 0);
+	ASSERT(function->blockDimZ != 0);
+
+	checkErrors(cuLaunchKernel((CUfunction)function->function, 
+		(unsigned int)gridDimX, (unsigned int)gridDimY, (unsigned int)gridDimZ,
+		(unsigned int)function->blockDimX, (unsigned int)function->blockDimY, (unsigned int)function->blockDimZ, 
+		(unsigned int)function->sharedMemBytes,
+		(CUstream)stream,	nullptr, nullptr));
+
 }
