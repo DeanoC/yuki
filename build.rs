@@ -1,6 +1,18 @@
 use cuda_config::*;
-use std::env;
 use std::path::Path;
+use std::{env, fs};
+
+fn copy(target_dir_path: &Path, file_name: &Path) {
+    let wd = env::current_dir().unwrap();
+    let fnonly = Path::new(file_name).file_name().unwrap();
+    let src = Path::new( &wd).join(file_name);
+    let dst = Path::new(&target_dir_path).join(fnonly);
+
+    print!("copying {} to {}", src.display(), dst.display());
+    fs::copy(src, dst).unwrap();
+}
+
+const PTX_FILE: &str = "compute_cuda\\ptxs\\cuda_compile_ptx_1_generated_test.cu.ptx";
 
 fn main()
 {
@@ -36,5 +48,8 @@ fn main()
         .generate()
         .expect("Unable to generate bindings");
     bindings.write_to_file(dest_path).expect("Unable to write bindings");
+
+    let target_dir_path = env::var("OUT_DIR").unwrap();
+    copy(Path::new(&target_dir_path), Path::new(&PTX_FILE));
 
 }
