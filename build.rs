@@ -1,18 +1,43 @@
 use cuda_config::*;
 use std::path::Path;
-use std::{env, fs};
+use std::{env, fs, io};
+use std::fs::DirEntry;
 
-fn copy(target_dir_path: &Path, file_name: &Path) {
-    let wd = env::current_dir().unwrap();
-    let fnonly = Path::new(file_name).file_name().unwrap();
-    let src = Path::new( &wd).join(file_name);
-    let dst = Path::new(&target_dir_path).join(fnonly);
-
-    print!("copying {} to {}", src.display(), dst.display());
-    fs::copy(src, dst).unwrap();
+// one possible implementation of walking a directory only visiting files
+fn visit_dirs<F>(ref dir: &Path, cb: F) -> io::Result<()> where F: Fn(&DirEntry), F: Copy {
+    if dir.is_dir() {
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                visit_dirs(&path, cb)?;
+            } else {
+                cb(&entry);
+            }
+        }
+    }
+    Ok(())
 }
 
-const PTX_FILE: &str = "compute_cuda\\ptxs\\cuda_compile_ptx_1_generated_test.cu.ptx";
+fn copy_ptxs(ref src_dir_path: &Path, ref dst_dir_path: &Path) {
+    visit_dirs(src_dir_path, |e: &DirEntry| {
+        let p = e.path();
+        match p.extension() {
+            Some(ext) if ext == "ptx" => {
+                let pc = p.clone();
+                let v: Vec<&str> = pc.file_name().unwrap().to_str().unwrap()
+                    .rsplitn(2, "_generated_").collect();
+                if !v.is_empty() {
+                    let src = p;
+                    let dst = dst_dir_path.join(v[0]);
+                    println!("copying {}, {}", src.to_path_buf().display(), dst.to_path_buf().display());
+                    fs::copy(src.to_path_buf(), dst.to_path_buf()).expect("copy failed");
+                }
+            }
+            Some(..) | None => ()
+        }
+    }).unwrap();
+}
 
 fn main()
 {
@@ -40,6 +65,7 @@ fn main()
 
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("accelcuda.rs");
+    println!("{}", dest_path.display());
 
     let bindings = bindgen::Builder::default()
         .header("compute_cuda/include/accelcuda.h")
@@ -49,7 +75,11 @@ fn main()
         .expect("Unable to generate bindings");
     bindings.write_to_file(dest_path).expect("Unable to write bindings");
 
-    let target_dir_path = env::var("OUT_DIR").unwrap();
-    copy(Path::new(&target_dir_path), Path::new(&PTX_FILE));
+    let target_dir_path = env::current_dir().unwrap();//env::var_os("OUT_DIR").unwrap();
+    let target_dir_path = Path::new(&target_dir_path);
+    let ptx_dir_path = target_dir_path.join("resources").join("gpu");
 
+    fs::create_dir_all(&ptx_dir_path).unwrap();
+
+    copy_ptxs("compute_cuda\\ptxs".as_ref(), &ptx_dir_path);
 }
