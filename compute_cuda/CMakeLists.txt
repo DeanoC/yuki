@@ -23,6 +23,7 @@ set(Deps
 ADD_LIB2(${LibName} "${Src}" "${Deps}")
 
 set(CUDA_GENERATED_OUTPUT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ptxs)
+file(MAKE_DIRECTORY ${CUDA_GENERATED_OUTPUT_DIR})
 set(CUDA_VERBOSE_BUILD OFF)
 set(CUDA_NVCC_FLAGS "-gencode arch=compute_61,code=sm_61")
 find_package(CUDA REQUIRED)
